@@ -1,23 +1,16 @@
-# RunPod worker SDK
-runpod>=1.7.0
-
-# GFPGAN + RealESRGAN (pip packages)
-gfpgan>=1.3.8
-realesrgan>=0.3.0
-
-# BasicSR - архитектуры нейросетей (RRDBNet и др.)
-basicsr>=1.4.2
-
-# FaceXLib - детекция и обработка лиц (зависимость GFPGAN)
-facexlib>=0.3.0
-
-# Runtime utils
-opencv-python>=4.8.0
-numpy>=1.23,<2
-requests>=2.31.0
-Pillow>=10.0.0
-
-# Для корректного определения лиц
-filterpy
-scikit-image
+opencv-python-headless
+numpy<2
+Pillow
+runpod
+diffusers[torch]
+transformers
+boto3
+gfpgan>=1.3.7
+realesrgan>=0.2.5
 scipy
+tqdm
+lmdb
+pyyaml
+yapf
+basicsr>=1.4.2
+facexlib>=0.2.5
