@@ -203,9 +203,6 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     try:
         job_input = job.get("input", {}) or {}
 
-        # weights
-        _ensure_weights_exist()
-
         # params
         upscale = int(job_input.get("upscale", DEFAULTS["upscale"]))
         arch = str(job_input.get("arch", DEFAULTS["arch"]))
@@ -286,5 +283,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e)}
 
+
+# Загружаем веса один раз при старте воркера (не на каждый запрос)
+_ensure_weights_exist()
 
 runpod.serverless.start({"handler": handler})

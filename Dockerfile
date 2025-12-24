@@ -22,7 +22,7 @@ COPY . /app
 
 # install python deps
 RUN python -m pip install --upgrade pip \
- && pip install -r req.txt
+ && pip install -r requirements.txt
 
 # (опционально) если вы хотите использовать код из репозитория как пакет
 # GFPGAN репозиторий обычно содержит setup.py
