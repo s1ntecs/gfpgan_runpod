@@ -24,6 +24,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python3 download_weights.py
 
 # Копируем основной код
-COPY handler.py .
+COPY rp_handler.py .
 
-CMD ["python3", "-u", "handler.py"]
+CMD ["python3", "-u", "rp_handler.py"]
