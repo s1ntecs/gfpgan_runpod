@@ -38,8 +38,8 @@ MODELS = {
     # RealESRGAN - для апскейла фона (опционально)
     "realesrgan": [
         {
-            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",  # noqa
-            "path": os.path.join(REALESRGAN_DIR, "RealESRGAN_x2plus.pth"),
+            "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",  # noqa
+            "path": os.path.join(REALESRGAN_DIR, "realesr-general-x4v3.pth"),
         },
     ],
 }

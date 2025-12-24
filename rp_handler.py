@@ -11,11 +11,14 @@ import runpod
 import torch
 
 from realesrgan.utils import RealESRGANer
-from basicsr.archs.rrdbnet_arch import RRDBNet
+from basicsr.archs.srvgg_arch import SRVGGNetCompact
+
 
 # Пути к предзагруженным весам
 WEIGHTS_DIR = "weights"
-REALESRGAN_MODEL_PATH = os.path.join(WEIGHTS_DIR, "realesrgan", "RealESRGAN_x2plus.pth")
+REALESRGAN_MODEL_PATH = os.path.join(WEIGHTS_DIR,
+                                     "realesrgan",
+                                     "realesr-general-x4v3.pth")
 
 # Проверяем устройство
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,31 +28,22 @@ if device == "cuda":
 
 # --- Инициализация Real-ESRGAN x2plus ---
 # Конфиг x2plus RRDBNet берётся из официального inference_realesrgan.py. :contentReference[oaicite:1]{index=1}
-sr_model = RRDBNet(
-    num_in_ch=3,
-    num_out_ch=3,
-    num_feat=64,
-    num_block=23,
-    num_grow_ch=32,
-    scale=2,
-)
-
-half = (device == "cuda")
-
-# Некоторые версии RealESRGANer имеют параметр device, некоторые — нет.
-realesrgan_kwargs = dict(
-    scale=2,
+model = SRVGGNetCompact(num_in_ch=3,
+                        num_out_ch=3,
+                        num_feat=64,
+                        num_conv=32,
+                        upscale=4,
+                        act_type='prelu')
+half = True if torch.cuda.is_available() else False
+upsampler = RealESRGANer(
+    scale=4,
     model_path=REALESRGAN_MODEL_PATH,
-    model=sr_model,
-    tile=0,          # можно менять из input (см. handler)
+    model=model,
+    tile=0,
     tile_pad=10,
     pre_pad=0,
-    half=half,
-)
-if "device" in inspect.signature(RealESRGANer.__init__).parameters:
-    realesrgan_kwargs["device"] = device
+    half=half)
 
-upsampler = RealESRGANer(**realesrgan_kwargs)
 
 print("✅ RealESRGANer loaded successfully!")
 
@@ -76,7 +70,7 @@ def handler(job):
     # pre_pad = int(job_input.get("pre_pad", 0))
 
     # Жёстко держим outscale=2 (как ты и просил)
-    outscale = 2
+    outscale = 4
 
     # Применяем параметры тайлинга на лету (без пересоздания модели)
     # upsampler.tile_size = tile
@@ -103,9 +97,6 @@ def handler(job):
         "time": processing_time,
         "meta": {
             "outscale": outscale,
-            "tile": tile,
-            "tile_pad": tile_pad,
-            "pre_pad": pre_pad,
             "device": device,
             "half": half,
         },
