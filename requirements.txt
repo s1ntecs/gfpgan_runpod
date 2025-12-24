@@ -2,8 +2,8 @@ opencv-python-headless
 numpy<2
 Pillow
 runpod
-diffusers[torch]
-transformers
+# diffusers[torch]
+# transformers
 boto3
 gfpgan>=1.3.7
 realesrgan>=0.2.5
