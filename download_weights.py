@@ -5,6 +5,7 @@ download_weights.py
 """
 
 import os
+import time
 import requests
 from tqdm import tqdm
 
@@ -34,7 +35,7 @@ MODELS = {
             "path": os.path.join(FACEXLIB_DIR, "parsing_parsenet.pth"),
         },
     ],
-    # RealESRGAN - для апскейла фона (опционально, но рекомендуется)
+    # RealESRGAN - для апскейла фона (опционально)
     "realesrgan": [
         {
             "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
@@ -43,41 +44,71 @@ MODELS = {
     ],
 }
 
+# Настройки retry
+MAX_RETRIES = 5
+RETRY_DELAY = 10  # секунд
+TIMEOUT = 300  # 5 минут на скачивание
+
 
 def download_file(url: str, dest_path: str) -> None:
-    """Скачивает файл с прогресс-баром."""
+    """Скачивает файл с прогресс-баром и retry логикой."""
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     
     if os.path.exists(dest_path):
         print(f"✓ Уже существует: {dest_path}")
         return
     
-    print(f"⬇ Скачиваю: {url}")
-    
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    
-    total_size = int(response.headers.get('content-length', 0))
-    
-    with open(dest_path, 'wb') as f, tqdm(
-        total=total_size,
-        unit='B',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as pbar:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-            pbar.update(len(chunk))
-    
-    print(f"✓ Сохранено: {dest_path}")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            print(f"⬇ Скачиваю (попытка {attempt}/{MAX_RETRIES}): {url}")
+            
+            response = requests.get(
+                url, 
+                stream=True, 
+                timeout=TIMEOUT,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            
+            # Сначала скачиваем во временный файл
+            temp_path = dest_path + ".tmp"
+            
+            with open(temp_path, 'wb') as f, tqdm(
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as pbar:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    pbar.update(len(chunk))
+            
+            # Переименовываем после успешного скачивания
+            os.rename(temp_path, dest_path)
+            print(f"✓ Сохранено: {dest_path}")
+            return
+            
+        except (requests.RequestException, IOError) as e:
+            print(f"⚠ Попытка {attempt} не удалась: {e}")
+            
+            # Удаляем частично скачанный файл
+            temp_path = dest_path + ".tmp"
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            
+            if attempt < MAX_RETRIES:
+                print(f"⏳ Ждём {RETRY_DELAY} секунд перед повторной попыткой...")
+                time.sleep(RETRY_DELAY)
+            else:
+                raise Exception(f"Не удалось скачать {url} после {MAX_RETRIES} попыток")
 
 
 def setup_environment_paths():
     """Устанавливает переменные окружения для путей к моделям."""
-    # facexlib ищет модели по этим путям
     os.environ['FACEXLIB_WEIGHTS'] = FACEXLIB_DIR
     
-    # Создаём симлинки в стандартные директории (для совместимости)
     standard_paths = [
         (GFPGAN_DIR, "gfpgan/weights"),
         (FACEXLIB_DIR, "facexlib/weights"),
@@ -109,11 +140,7 @@ def main():
         print(f"\n📦 {category.upper()}")
         print("-" * 40)
         for model in models:
-            try:
-                download_file(model["url"], model["path"])
-            except Exception as e:
-                print(f"❌ Ошибка при скачивании {model['url']}: {e}")
-                raise
+            download_file(model["url"], model["path"])
     
     # Настраиваем пути
     setup_environment_paths()
