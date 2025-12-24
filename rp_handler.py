@@ -71,17 +71,17 @@ def handler(job):
 
     # Опциональные параметры (полезно для больших изображений, чтобы не словить OOM)
     # tile=0 — без тайлинга; 256/512/1024 — в зависимости от VRAM
-    tile = int(job_input.get("tile", 0))
-    tile_pad = int(job_input.get("tile_pad", 10))
-    pre_pad = int(job_input.get("pre_pad", 0))
+    # tile = int(job_input.get("tile", 0))
+    # tile_pad = int(job_input.get("tile_pad", 10))
+    # pre_pad = int(job_input.get("pre_pad", 0))
 
     # Жёстко держим outscale=2 (как ты и просил)
     outscale = 2
 
     # Применяем параметры тайлинга на лету (без пересоздания модели)
-    upsampler.tile_size = tile
-    upsampler.tile_pad = tile_pad
-    upsampler.pre_pad = pre_pad
+    # upsampler.tile_size = tile
+    # upsampler.tile_pad = tile_pad
+    # upsampler.pre_pad = pre_pad
 
     img = _download_image(image_url)
 
