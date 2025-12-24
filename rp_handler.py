@@ -1,66 +1,99 @@
 import os
 import time
+import io
+import base64
+import inspect
+
 import cv2
 import numpy as np
-import io
 import requests
 import runpod
-from gfpgan.utils import GFPGANer
-import base64
 import torch
+
+from realesrgan.utils import RealESRGANer
+from basicsr.archs.rrdbnet_arch import RRDBNet
 
 # Пути к предзагруженным весам
 WEIGHTS_DIR = "weights"
-GFPGAN_MODEL_PATH = os.path.join(WEIGHTS_DIR, "gfpgan", "GFPGANv1.4.pth")
+REALESRGAN_MODEL_PATH = os.path.join(WEIGHTS_DIR, "realesrgan", "RealESRGAN_x2plus.pth")
 
-# Устанавливаем переменные окружения для facexlib
-os.environ['FACEXLIB_WEIGHTS'] = os.path.join(WEIGHTS_DIR, "facexlib")
-
-# Проверяем доступность GPU
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# Проверяем устройство
+device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
-if device == 'cuda':
+if device == "cuda":
     print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-# Инициализируем GFPGANer
-face_enhancer = GFPGANer(
-    model_path=GFPGAN_MODEL_PATH,
-    upscale=2,
-    arch='clean',
-    channel_multiplier=2,
-    device=device,
-    # Указываем путь к весам фонового апскейлера (опционально)
-    bg_upsampler=None  # или можно подключить RealESRGAN
+# --- Инициализация Real-ESRGAN x2plus ---
+# Конфиг x2plus RRDBNet берётся из официального inference_realesrgan.py. :contentReference[oaicite:1]{index=1}
+sr_model = RRDBNet(
+    num_in_ch=3,
+    num_out_ch=3,
+    num_feat=64,
+    num_block=23,
+    num_grow_ch=32,
+    scale=2,
 )
 
-print("✅ Model loaded successfully!")
+half = (device == "cuda")
+
+# Некоторые версии RealESRGANer имеют параметр device, некоторые — нет.
+realesrgan_kwargs = dict(
+    scale=2,
+    model_path=REALESRGAN_MODEL_PATH,
+    model=sr_model,
+    tile=0,          # можно менять из input (см. handler)
+    tile_pad=10,
+    pre_pad=0,
+    half=half,
+)
+if "device" in inspect.signature(RealESRGANer.__init__).parameters:
+    realesrgan_kwargs["device"] = device
+
+upsampler = RealESRGANer(**realesrgan_kwargs)
+
+print("✅ RealESRGANer loaded successfully!")
+
+
+def _download_image(image_url: str, timeout: int = 120) -> np.ndarray:
+    r = requests.get(image_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ValueError("cv2.imdecode вернул None (битая картинка или неподдерживаемый формат).")
+    return img
 
 
 def handler(job):
     start_time = time.time()
-    job_input = job["input"]
+    job_input = job.get("input", {})
 
     image_url = job_input["image_url"]
-    response = requests.get(image_url)
-    if response.status_code != 200:
-        raise Exception(f"Failed to download image from {image_url}")
 
-    image_data = response.content
-    image = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
+    # Опциональные параметры (полезно для больших изображений, чтобы не словить OOM)
+    # tile=0 — без тайлинга; 256/512/1024 — в зависимости от VRAM
+    tile = int(job_input.get("tile", 0))
+    tile_pad = int(job_input.get("tile_pad", 10))
+    pre_pad = int(job_input.get("pre_pad", 0))
 
-    _, _, output = face_enhancer.enhance(
-        image,
-        has_aligned=False,
-        only_center_face=False,
-        paste_back=True
-    )
+    # Жёстко держим outscale=2 (как ты и просил)
+    outscale = 2
 
-    success, encoded_image = cv2.imencode('.png', output)
+    # Применяем параметры тайлинга на лету (без пересоздания модели)
+    upsampler.tile_size = tile
+    upsampler.tile_pad = tile_pad
+    upsampler.pre_pad = pre_pad
+
+    img = _download_image(image_url)
+
+    # RealESRGANer.enhance(img, outscale=...) возвращает (output, _)
+    # Сигнатура enhance: enhance(self, img, outscale=None, alpha_upsampler='realesrgan') :contentReference[oaicite:2]{index=2}
+    output, _ = upsampler.enhance(img, outscale=outscale)
+
+    success, encoded = cv2.imencode(".png", output)
     if not success:
-        raise Exception("Image encoding failed")
+        raise RuntimeError("cv2.imencode('.png', ...) не смог закодировать изображение")
 
-    output_buffer = io.BytesIO(encoded_image.tobytes())
-    base64_image = base64.b64encode(output_buffer.getvalue()).decode()
+    base64_image = base64.b64encode(encoded.tobytes()).decode("utf-8")
 
     processing_time = round(time.time() - start_time, 2)
     print(f"⏱ Processing time: {processing_time}s")
@@ -68,6 +101,14 @@ def handler(job):
     return {
         "images_base64": [base64_image],
         "time": processing_time,
+        "meta": {
+            "outscale": outscale,
+            "tile": tile,
+            "tile_pad": tile_pad,
+            "pre_pad": pre_pad,
+            "device": device,
+            "half": half,
+        },
     }
 
 
